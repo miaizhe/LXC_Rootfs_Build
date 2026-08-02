@@ -144,7 +144,7 @@ jobs:
           go mod edit -replace=github.com/cyphar/filepath-securejoin=github.com/cyphar/filepath-securejoin@v0.5.2
           go build -mod=mod -o distrobuilder.bin ./distrobuilder
           sudo cp distrobuilder.bin /usr/local/bin/distrobuilder
-          distrobuilder version
+          distrobuilder --version
 
       - name: 构建 rootfs
         run: |
