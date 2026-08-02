@@ -1,0 +1,190 @@
+name: Build LXC Rootfs
+
+on:
+  workflow_dispatch:
+    inputs:
+      distribution:
+        description: 发行版 (all = 全部)
+        type: choice
+        options:
+          - all
+          - debian
+          - ubuntu
+          - archlinux
+          - kali
+          - nixos
+        default: all
+      release:
+        description: 版本号, 留空使用默认 (debian=trixie, ubuntu=24.04, archlinux=current, kali=kali-rolling, nixos=26.05)
+        type: string
+        default: ''
+      architecture:
+        description: 架构
+        type: choice
+        options:
+          - arm64
+          - amd64
+          - both
+        default: arm64
+      variant:
+        description: 变体 (default/cloud/minimal)
+        type: choice
+        options:
+          - default
+          - cloud
+          - minimal
+        default: default
+      compression:
+        description: rootfs 压缩算法
+        type: choice
+        options:
+          - xz
+          - gzip
+          - zstd
+          - bzip2
+        default: xz
+  schedule:
+    - cron: '0 2 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      distro: ${{ steps.gen.outputs.distro }}
+      nixos: ${{ steps.gen.outputs.nixos }}
+    steps:
+      - name: 生成构建矩阵
+        id: gen
+        env:
+          GEN_DISTRIBUTION: ${{ inputs.distribution }}
+          GEN_RELEASE: ${{ inputs.release }}
+          GEN_ARCHITECTURE: ${{ inputs.architecture }}
+          GEN_VARIANT: ${{ inputs.variant }}
+          GEN_COMPRESSION: ${{ inputs.compression }}
+        run: |
+          python3 << 'EOF'
+          import json, os
+
+          def get(name, default):
+              v = os.environ.get('GEN_' + name, '').strip()
+              return v or default
+
+          distribution = get('DISTRIBUTION', 'all')
+          release = get('RELEASE', '')
+          architecture = get('ARCHITECTURE', 'arm64')
+          variant = get('VARIANT', 'default')
+          compression = get('COMPRESSION', 'xz')
+
+          DEFAULT_RELEASE = {
+              'debian': 'trixie',
+              'ubuntu': '24.04',
+              'archlinux': 'current',
+              'kali': 'kali-rolling',
+              'nixos': '26.05',
+          }
+          ALL_DISTROS = list(DEFAULT_RELEASE)
+          ARCHS = ['amd64', 'arm64'] if architecture == 'both' else [architecture]
+
+          distros = ALL_DISTROS if distribution == 'all' else [distribution]
+          rows = []
+          for d in distros:
+              rel = release or DEFAULT_RELEASE.get(d, '')
+              for a in ARCHS:
+                  rows.append({'distro': d, 'release': rel, 'arch': a,
+                               'variant': variant, 'compression': compression})
+
+          nixos = [r for r in rows if r['distro'] == 'nixos']
+          distro = [r for r in rows if r['distro'] != 'nixos']
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'distro={json.dumps(distro)}\n')
+              f.write(f'nixos={json.dumps(nixos)}\n')
+          EOF
+
+  build-distro:
+    needs: matrix
+    if: ${{ needs.matrix.outputs.distro != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.matrix.outputs.distro) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 注册 arm64 binfmt (QEMU 模拟)
+        if: matrix.arch != 'amd64'
+        run: sudo docker run --privileged --rm tonistiigi/binfmt --install arm64
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            qemu-user-static binfmt-support debian-archive-keyring \
+            rsync squashfs-tools wget xz-utils
+          DEB=$(curl -s https://deb.debian.org/debian/pool/main/d/debootstrap/ \
+            | grep -oE 'debootstrap_[0-9][^"<]*_all\.deb' | sort -V | tail -1)
+          curl -sfL "https://deb.debian.org/debian/pool/main/d/debootstrap/${DEB}" -o /tmp/debootstrap.deb
+          sudo dpkg -i /tmp/debootstrap.deb
+          debootstrap --version
+
+      - name: 安装 distrobuilder
+        run: |
+          command -v go >/dev/null || sudo apt-get install -y golang-go
+          go install github.com/lxc/distrobuilder/cmd/distrobuilder@latest
+          sudo cp "$(go env GOPATH)/bin/distrobuilder" /usr/local/bin/
+          distrobuilder version
+
+      - name: 构建 rootfs
+        run: |
+          bash scripts/build-distro.sh \
+            "$GITHUB_WORKSPACE/images/${{ matrix.distro }}.yaml" \
+            "${{ matrix.release }}" \
+            "${{ matrix.arch }}" \
+            "${{ matrix.variant }}" \
+            "${{ matrix.compression }}" \
+            "$GITHUB_WORKSPACE/output"
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.distro }}-${{ matrix.release }}-${{ matrix.arch }}-${{ matrix.variant }}
+          path: output/*
+          if-no-files-found: error
+          retention-days: 14
+
+  build-nixos:
+    needs: matrix
+    if: ${{ needs.matrix.outputs.nixos != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.matrix.outputs.nixos) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y squashfs-tools
+
+      - name: 构建 NixOS rootfs
+        run: |
+          bash scripts/build-nixos.sh \
+            "${{ matrix.release }}" \
+            "${{ matrix.arch }}" \
+            "$GITHUB_WORKSPACE/output"
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: nixos-${{ matrix.release }}-${{ matrix.arch }}
+          path: output/*
+          if-no-files-found: error
+          retention-days: 14

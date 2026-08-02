@@ -1,0 +1,448 @@
+image:
+  distribution: archlinux
+
+source:
+  downloader: archlinux-http
+  url: https://archive.archlinux.org/iso/
+
+targets:
+  lxc:
+    create_message: |
+      You just created an {{ image.description }} container.
+    config:
+    - type: all
+      before: 5
+      content: |-
+        lxc.include = LXC_TEMPLATE_CONFIG/archlinux.common.conf
+
+    - type: user
+      before: 5
+      content: |-
+        lxc.include = LXC_TEMPLATE_CONFIG/archlinux.userns.conf
+
+    - type: all
+      after: 4
+      content: |-
+        lxc.include = LXC_TEMPLATE_CONFIG/common.conf
+
+    - type: user
+      after: 4
+      content: |-
+        lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
+
+    - type: all
+      content: |-
+        lxc.arch = {{ image.architecture_kernel }}
+
+files:
+- name: hostname
+  path: /etc/hostname
+  generator: hostname
+
+- name: hosts
+  path: /etc/hosts
+  generator: hosts
+
+- path: /etc/default/grub
+  generator: dump
+  content: |-
+    # Set the recordfail timeout
+    GRUB_RECORDFAIL_TIMEOUT=0
+
+    # Do not wait on grub prompt
+    GRUB_TIMEOUT=0
+
+    # Set the default commandline
+    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} console=tty1 console=ttyS0"
+
+    # Set the grub console type
+    GRUB_TERMINAL=console
+  types:
+  - vm
+
+- name: eth0.network
+  path: /etc/systemd/network/eth0.network
+  generator: dump
+  content: |-
+    [Match]
+    Name=eth0
+
+    [Network]
+    DHCP=ipv4
+
+    [DHCPv4]
+    UseDomains=true
+    UseMTU=true
+
+    [DHCP]
+    ClientIdentifier=mac
+  types:
+  - container
+
+- name: enp5s0.network
+  path: /etc/systemd/network/enp5s0.network
+  generator: dump
+  content: |-
+    [Match]
+    Name=enp5s0
+
+    [Network]
+    DHCP=ipv4
+
+    [DHCPv4]
+    UseDomains=true
+    UseMTU=true
+
+    [DHCP]
+    ClientIdentifier=mac
+  types:
+  - vm
+
+- name: incus-agent
+  generator: incus-agent
+  types:
+  - vm
+
+- generator: fstab
+  types:
+  - vm
+
+- name: meta-data
+  generator: cloud-init
+  variants:
+  - cloud
+
+- name: network-config
+  generator: cloud-init
+  variants:
+  - cloud
+
+- name: user-data
+  generator: cloud-init
+  variants:
+  - cloud
+
+- name: vendor-data
+  generator: cloud-init
+  variants:
+  - cloud
+
+- path: /etc/sudoers.d/90-incus
+  generator: dump
+  mode: 0440
+  content: |-
+    # User rules for archlinux
+    archlinux ALL=(ALL) NOPASSWD: ALL
+  types:
+  - vm
+  variants:
+  - desktop-gnome
+
+packages:
+  manager: pacman
+  update: true
+  cleanup: true
+  sets:
+  - packages:
+    - base
+    - dhcpcd
+    - diffutils
+    - file
+    - gettext
+    - grep
+    - groff
+    - gzip
+    - inetutils
+    - iproute2
+    - iputils
+    - less
+    - licenses
+    - logrotate
+    - man-db
+    - man-pages
+    - nano
+    - netctl
+    - procps-ng
+    - psmisc
+    - sed
+    - sudo
+    - sysfsutils
+    - systemd-sysvcompat
+    - tar
+    - texinfo
+    - vi
+    - which
+    action: install
+
+  - packages:
+    - cloud-init
+    - openbsd-netcat
+    action: install
+    variants:
+    - cloud
+
+  - packages:
+    - cloud-guest-utils
+    - grub
+    action: install
+    types:
+    - vm
+
+  - packages:
+    - linux
+    action: install
+    architectures:
+    - riscv64
+    - x86_64
+    types:
+    - vm
+
+  - packages:
+    - linux-aarch64
+    action: remove
+    architectures:
+    - aarch64
+    types:
+    - container
+
+  - packages:
+    - linux-armv7
+    action: remove
+    architectures:
+    - armv7
+
+  - packages:
+    - libedit
+    - net-tools
+    - openssh
+    action: remove
+    architectures:
+    - aarch64
+    - armv7
+
+  - packages:
+    - linux-firmware
+    action: remove
+    architectures:
+    - aarch64
+    types:
+    - container
+
+  - packages:
+    - gnome
+    - spice-vdagent
+    action: install
+    variants:
+    - desktop-gnome
+
+actions:
+- trigger: post-unpack
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    echo 'Server = https://mirror.csclub.uwaterloo.ca/archlinux/$repo/os/$arch' > /etc/pacman.d/mirrorlist
+  architectures:
+  - x86_64
+
+- trigger: post-unpack
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    # The [community] repo has moved into [extra]
+    sed -ri '/^\[community\]$/,+2d' /etc/pacman.conf
+
+    # Update pacman-keyring to ensure package installs will not break because of GPG issues
+    pacman -Sy --needed --noconfirm archlinux-keyring
+
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
+    umount -l /etc/resolv.conf || true
+    rm /etc/resolv.conf
+    ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+    systemctl enable systemd-networkd
+    systemctl enable systemd-resolved
+
+    # Fix ping
+    setcap cap_net_raw=ep /usr/bin/ping || chmod +s /usr/bin/ping
+
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    # Timezone
+    rm -f /etc/localtime
+    ln -s /usr/share/zoneinfo/UTC /etc/localtime
+    echo UTC > /etc/timezone
+
+    # Locale
+    echo en_US.UTF-8 UTF-8 > /etc/locale.gen
+    locale-gen
+    echo LANG=en_US.UTF-8 > /etc/locale.conf
+  types:
+  - vm
+
+- trigger: post-files
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    # Automatic disk resize
+    cat << EOF > /etc/systemd/system/incus-growpart.service
+    [Unit]
+    Description=Incus - grow root partition
+
+    [Service]
+    Type=oneshot
+    ExecStartPre=-/usr/sbin/growpart /dev/sda 2
+    ExecStart=/usr/sbin/resize2fs /dev/sda2
+
+    [Install]
+    WantedBy=default.target
+    EOF
+    systemctl enable incus-growpart
+  variants:
+  - default
+  - desktop-gnome
+  types:
+  - vm
+
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    # User
+    USERNAME="archlinux"
+    useradd ${USERNAME} -m -U -G adm,video,users
+
+    cat << EOF > /etc/gdm/custom.conf
+    [daemon]
+    AutomaticLogin=${USERNAME}
+    AutomaticLoginEnable=true
+    EOF
+
+    # Enable GDM
+    systemctl enable gdm
+
+    # Disable colord
+    systemctl mask colord
+
+    cat << EOF > /home/archlinux/firstboot.sh
+    #!/bin/sh
+
+    set -e
+
+    # Disable automatic screensaver lock
+    gsettings set org.gnome.desktop.screensaver lock-enabled false
+
+    # Change power button action to poweroff. This will cause the VM to shut down when `lxc stop` is called.
+    gsettings set org.gnome.settings-daemon.plugins.power power-button-action interactive
+
+    # Disable 60-second logout prompt when `lxc stop` is called.
+    gsettings set org.gnome.SessionManager logout-prompt false
+
+    # Disable welcome tour.
+    gsettings set org.gnome.shell welcome-dialog-last-shown-version '4294967295'
+
+    # Delete this script
+    rm /home/archlinux/firstboot.sh
+    EOF
+
+    chown archlinux:archlinux /home/archlinux/firstboot.sh
+    chmod +x /home/archlinux/firstboot.sh
+
+    cat << EOF > /etc/systemd/user/firstboot.service
+    [Unit]
+    Description=One time boot script
+    After=dbus.service
+    After=display-manager.service
+    ConditionFirstBoot=yes
+
+    [Service]
+    Type=oneshot
+    ExecStart=/home/archlinux/firstboot.sh
+
+    [Install]
+    WantedBy=default.target
+    EOF
+
+    export XDG_RUNTIME_DIR=/run/user/$(id -u archlinux)
+    sudo -u archlinux -- systemctl --user enable firstboot.service
+  variants:
+  - desktop-gnome
+  types:
+  - vm
+
+- trigger: post-files
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    TARGET="x86_64"
+    [ "$(uname -m)" = "aarch64" ] && TARGET="arm64"
+    [ "$(uname -m)" = "riscv64" ] && TARGET="riscv64"
+
+    grub-install --target="${TARGET}-efi" --efi-directory=/boot/efi --no-nvram --removable
+    grub-install --target="${TARGET}-efi" --efi-directory=/boot/efi --no-nvram
+    grub-mkconfig -o /boot/grub/grub.cfg
+    sed -i "s#root=[^ ]*#root=${DISTROBUILDER_ROOT_UUID}#g" /boot/grub/grub.cfg
+
+    # Rebuild initrd
+    sed -i 's#^MODULES=.*#MODULES=(virtio_pci virtio_scsi virtio_console)#' /etc/mkinitcpio.conf
+
+    sed -i 's#^PRESETS=.*#PRESETS=(default)#' /etc/mkinitcpio.d/*.preset
+    mkinitcpio -P || true
+  types:
+  - vm
+
+- trigger: post-files
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    systemctl enable cloud-init-main.service cloud-init-local.service cloud-config.service cloud-final.service
+  variants:
+  - cloud
+
+- trigger: post-files
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    # Remove machine-id as this is necessary for systemd units with ConditionFirstBoot=yes
+    rm /etc/machine-id
+  types:
+  - vm
+
+- trigger: post-files
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    # Delete the keyring with its private key (see GHSA-4h59-f67g-5qxp)
+    rm -rf /etc/pacman.d/gnupg
+
+    # Initialize the keyring at boot time to get pacman working
+    cat << EOF > /etc/systemd/system/pacman-init.service
+    [Unit]
+    Description=Incus - initializes Pacman keyring
+    Before=archlinux-keyring-wkd-sync.service
+    After=time-sync.target
+    ConditionPathIsDirectory=!/etc/pacman.d/gnupg
+
+    [Service]
+    Type=oneshot
+    ExecStart=/usr/bin/pacman-key --init
+    ExecStart=/usr/bin/pacman-key --populate
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+    systemctl enable pacman-init.service
+
+mappings:
+  architecture_map: archlinux
