@@ -15,7 +15,7 @@ on:
           - nixos
         default: all
       release:
-        description: 版本号, 留空使用默认 (debian=trixie, ubuntu=24.04, archlinux=current, kali=kali-rolling, nixos=26.05)
+        description: 版本号, 留空使用默认 (debian=trixie, ubuntu=24.04→noble, archlinux=current, kali=kali-rolling, nixos=26.05); Ubuntu/Debian 支持填数字自动转代号 (如 ubuntu 26.04→resolute, debian 13→trixie)
         type: string
         default: ''
       architecture:
@@ -85,6 +85,13 @@ jobs:
               'kali': 'kali-rolling',
               'nixos': '26.05',
           }
+          # 数字版本 -> 发行版代号 (Ubuntu/Debian 使用代号作为 suite 名)
+          CODENAME = {
+              'ubuntu': {'22.04': 'jammy', '23.04': 'lunar', '23.10': 'mantic',
+                         '24.04': 'noble', '24.10': 'oracular', '25.04': 'plucky',
+                         '25.10': 'questing', '26.04': 'resolute'},
+              'debian': {'11': 'bullseye', '12': 'bookworm', '13': 'trixie', '14': 'forky'},
+          }
           ALL_DISTROS = list(DEFAULT_RELEASE)
           ARCHS = ['amd64', 'arm64'] if architecture == 'both' else [architecture]
 
@@ -92,6 +99,7 @@ jobs:
           rows = []
           for d in distros:
               rel = release or DEFAULT_RELEASE.get(d, '')
+              rel = CODENAME.get(d, {}).get(rel, rel)
               for a in ARCHS:
                   rows.append({'distro': d, 'release': rel, 'arch': a,
                                'variant': variant, 'compression': compression})
