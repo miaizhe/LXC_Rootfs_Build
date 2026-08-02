@@ -135,6 +135,7 @@ jobs:
       - name: 安装 distrobuilder
         run: |
           command -v go >/dev/null || sudo apt-get install -y golang-go
+          sudo apt-get install -y pkg-config libgpgme-dev libbtrfs-dev
           go install github.com/lxc/distrobuilder/v3/distrobuilder@latest
           sudo cp "$(go env GOPATH)/bin/distrobuilder" /usr/local/bin/
           distrobuilder version

@@ -41,7 +41,8 @@ lxc image import rootfs.tar.xz meta.tar.xz --alias debian-trixie
 ## 本地构建 (可选)
 
 ```bash
-# 安装依赖: debootstrap, qemu-user-static (构建 arm64 时), golang
+# 安装依赖: debootstrap, qemu-user-static (构建 arm64 时), golang, pkg-config, libgpgme-dev, libbtrfs-dev
+sudo apt-get install -y debootstrap qemu-user-static golang-go pkg-config libgpgme-dev libbtrfs-dev
 go install github.com/lxc/distrobuilder/v3/distrobuilder@latest
 
 # 构建 Debian arm64
