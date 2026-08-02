@@ -142,8 +142,8 @@ jobs:
           # OpenInRoot/Reopen (v0.4.x API), 而 selinux v1.13.1 又需要 pathrs-lite (v0.6.x API)。
           # v0.5.2 同时包含两套 API, 用 replace 强制使用
           go mod edit -replace=github.com/cyphar/filepath-securejoin=github.com/cyphar/filepath-securejoin@v0.5.2
-          go build -mod=mod -o distrobuilder ./distrobuilder
-          sudo cp distrobuilder /usr/local/bin/
+          go build -mod=mod -o distrobuilder.bin ./distrobuilder
+          sudo cp distrobuilder.bin /usr/local/bin/distrobuilder
           distrobuilder version
 
       - name: 构建 rootfs

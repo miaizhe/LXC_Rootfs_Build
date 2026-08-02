@@ -46,8 +46,8 @@ sudo apt-get install -y debootstrap qemu-user-static golang-go pkg-config libgpg
 git clone --depth 1 --branch v3.3.1 https://github.com/lxc/distrobuilder /tmp/distrobuilder
 cd /tmp/distrobuilder
 go mod edit -replace=github.com/cyphar/filepath-securejoin=github.com/cyphar/filepath-securejoin@v0.5.2
-go build -mod=mod -o distrobuilder ./distrobuilder
-sudo cp distrobuilder /usr/local/bin/
+go build -mod=mod -o distrobuilder.bin ./distrobuilder
+sudo cp distrobuilder.bin /usr/local/bin/distrobuilder
 # 构建 Debian arm64
 bash scripts/build-distro.sh images/debian.yaml trixie arm64 default xz ./output
 
