@@ -94,6 +94,7 @@ jobs:
           }
           ALL_DISTROS = list(DEFAULT_RELEASE)
           ARCHS = ['amd64', 'arm64'] if architecture == 'both' else [architecture]
+          RUNNER = {'amd64': 'ubuntu-latest', 'arm64': 'ubuntu-24.04-arm'}
 
           distros = ALL_DISTROS if distribution == 'all' else [distribution]
           rows = []
@@ -102,7 +103,8 @@ jobs:
               rel = CODENAME.get(d, {}).get(rel, rel)
               for a in ARCHS:
                   rows.append({'distro': d, 'release': rel, 'arch': a,
-                               'variant': variant, 'compression': compression})
+                               'variant': variant, 'compression': compression,
+                               'runner': RUNNER[a]})
 
           nixos = [r for r in rows if r['distro'] == 'nixos']
           distro = [r for r in rows if r['distro'] != 'nixos']
@@ -115,7 +117,7 @@ jobs:
   build-distro:
     needs: matrix
     if: ${{ needs.matrix.outputs.distro != '[]' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 360
     strategy:
       fail-fast: false
@@ -124,9 +126,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 注册 arm64 binfmt (QEMU 模拟)
-        if: matrix.arch != 'amd64'
-        run: sudo docker run --privileged --rm tonistiigi/binfmt --install arm64
+      - name: 注册 binfmt (仅跨架构模拟时需要)
+        run: |
+          HOST_ARCH=$(uname -m)
+          if [ "$HOST_ARCH" = "x86_64" ] && [ "${{ matrix.arch }}" = "arm64" ]; then
+            sudo docker run --privileged --rm tonistiigi/binfmt --install arm64
+          elif [ "$HOST_ARCH" = "aarch64" ] && [ "${{ matrix.arch }}" = "amd64" ]; then
+            sudo docker run --privileged --rm tonistiigi/binfmt --install amd64
+          fi
 
       - name: 安装依赖
         run: |
@@ -140,7 +147,15 @@ jobs:
           sudo dpkg -i /tmp/debootstrap.deb
           debootstrap --version
 
-      - name: 安装 distrobuilder
+      - name: 恢复 distrobuilder 缓存
+        id: cache-distrobuilder
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/distrobuilder
+          key: distrobuilder-${{ runner.os }}-v3.3.1-securejoin-v0.5.2
+
+      - name: 安装 distrobuilder (编译缓存未命中时)
+        if: steps.cache-distrobuilder.outputs.cache-hit != 'true'
         run: |
           command -v go >/dev/null || sudo apt-get install -y golang-go
           sudo apt-get install -y pkg-config libgpgme-dev libbtrfs-dev
@@ -152,7 +167,9 @@ jobs:
           go mod edit -replace=github.com/cyphar/filepath-securejoin=github.com/cyphar/filepath-securejoin@v0.5.2
           go build -mod=mod -o distrobuilder.bin ./distrobuilder
           sudo cp distrobuilder.bin /usr/local/bin/distrobuilder
-          distrobuilder --version
+
+      - name: 验证 distrobuilder
+        run: distrobuilder --version
 
       - name: 构建 rootfs
         run: |
@@ -175,7 +192,7 @@ jobs:
   build-nixos:
     needs: matrix
     if: ${{ needs.matrix.outputs.nixos != '[]' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
       fail-fast: false

@@ -71,6 +71,7 @@ bash scripts/build-nixos.sh 26.05 arm64 ./output
 
 ## 注意事项
 
-- **arm64 构建**: 在 amd64 的 GitHub Runner 上通过 QEMU 用户态模拟 (binfmt) 交叉构建，速度约为本机的 1/3~1/5，单任务可能需要 10~30 分钟
+- **arm64 构建**: 自动使用 GitHub 原生 arm64 托管 runner (`ubuntu-24.04-arm`)，无需 QEMU 模拟，速度与 amd64 相当；amd64 构建使用 `ubuntu-latest`。仅当两种架构混跑且需要交叉模拟时才会启用 binfmt
+- **distrobuilder 缓存**: 编译产物缓存在 Actions cache 中，首次构建后不再重复编译
 - **NixOS** 的特殊性: NixOS 无法用传统方式"组装" rootfs，官方容器镜像本身即由 Hydra CI 构建，因此本项目直接复用官方产物并重打包，保证与 images.linuxcontainers.org 一致
 - `images/*.yaml` 来自 [lxc/lxc-ci](https://github.com/lxc/lxc-ci/tree/main/images)，如需更新可直接覆盖后重新触发构建
