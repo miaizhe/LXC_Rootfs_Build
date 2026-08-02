@@ -45,7 +45,7 @@ lxc image import rootfs.tar.xz meta.tar.xz --alias debian-trixie
 sudo apt-get install -y debootstrap qemu-user-static golang-go pkg-config libgpgme-dev libbtrfs-dev
 git clone --depth 1 --branch v3.3.1 https://github.com/lxc/distrobuilder /tmp/distrobuilder
 cd /tmp/distrobuilder
-go mod edit -replace=github.com/cyphar/filepath-securejoin=github.com/cyphar/filepath-securejoin@v0.4.1
+go mod edit -replace=github.com/cyphar/filepath-securejoin=github.com/cyphar/filepath-securejoin@v0.5.2
 go build -mod=mod -o distrobuilder ./distrobuilder
 sudo cp distrobuilder /usr/local/bin/
 # 构建 Debian arm64

@@ -138,9 +138,10 @@ jobs:
           sudo apt-get install -y pkg-config libgpgme-dev libbtrfs-dev
           git clone --depth 1 --branch v3.3.1 https://github.com/lxc/distrobuilder /tmp/distrobuilder
           cd /tmp/distrobuilder
-          # 上游 go.mod 将 filepath-securejoin 升到 v0.6.1, 与 go.podman.io/storage v1.62.0
-          # 要求的 v0.4.x API (OpenInRoot/Reopen) 不兼容, 用 replace 强制使用 v0.4.1
-          go mod edit -replace=github.com/cyphar/filepath-securejoin=github.com/cyphar/filepath-securejoin@v0.4.1
+          # 上游 go.mod 将 filepath-securejoin 升到 v0.6.1, 但 v0.6.x 移除了 storage 需要的
+          # OpenInRoot/Reopen (v0.4.x API), 而 selinux v1.13.1 又需要 pathrs-lite (v0.6.x API)。
+          # v0.5.2 同时包含两套 API, 用 replace 强制使用
+          go mod edit -replace=github.com/cyphar/filepath-securejoin=github.com/cyphar/filepath-securejoin@v0.5.2
           go build -mod=mod -o distrobuilder ./distrobuilder
           sudo cp distrobuilder /usr/local/bin/
           distrobuilder version
