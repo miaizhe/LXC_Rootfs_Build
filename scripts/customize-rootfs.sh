@@ -83,6 +83,48 @@ if [ "$KDE" != "none" ] && [ -n "$USERNAME" ]; then
     echo '$USERNAME:1234' | chpasswd" || true
 fi
 
+# ---------- Mesa (Adreno GPU) 驱动 ----------
+# 来自 https://github.com/lfdevs/mesa-for-android-container (KGSL 后端, 硬件加速)
+if [ "$KDE" != "none" ] && [ "$ARCH" = "arm64" ]; then
+  MESA_SUFFIX=""
+  case "$DISTRO:$RELEASE" in
+    debian:trixie)     MESA_SUFFIX="debian_trixie_arm64" ;;
+    ubuntu:noble)      MESA_SUFFIX="ubuntu_noble_arm64" ;;
+    ubuntu:questing)   MESA_SUFFIX="ubuntu_questing_arm64" ;;
+    ubuntu:resolute)   MESA_SUFFIX="ubuntu_resolute_arm64" ;;
+    archlinux:*)       MESA_SUFFIX="archlinux_arm64" ;;
+  esac
+  if [ -n "$MESA_SUFFIX" ]; then
+    echo "==> 安装 Mesa (Adreno) 驱动 ($MESA_SUFFIX)"
+    URL=$(curl -s https://api.github.com/repos/lfdevs/mesa-for-android-container/releases/latest \
+      | grep -oE '"browser_download_url": "[^"]*'"$MESA_SUFFIX"'\.tar(\.gz)?"' \
+      | sed 's/.*: "//;s/"$//' | head -1)
+    if [ -n "$URL" ]; then
+      curl -sfL "$URL" -o "$WORKDIR/mesa.tar" || echo "警告: Mesa 驱动下载失败" >&2
+      if [ -s "$WORKDIR/mesa.tar" ]; then
+        sudo tar -xf "$WORKDIR/mesa.tar" -C "$WORKDIR/rootfs"
+        CHROOT ldconfig || true
+        rm -f "$WORKDIR/mesa.tar"
+      fi
+    else
+      echo "警告: 未找到 $MESA_SUFFIX 的 Mesa 驱动资产, 跳过 (不影响构建)" >&2
+    fi
+  else
+    echo "警告: $DISTRO $RELEASE 无对应的 Mesa 驱动资产, 跳过 (不影响构建)" >&2
+  fi
+
+  # 环境变量: anland 走 KGSL 三件套, X11 走 kgsl + TU_DEBUG=noconform
+  if [ "$ANLAND" = "true" ]; then
+    MESA_ENV="MESA_LOADER_DRIVER_OVERRIDE=kgsl
+GALLIUM_DRIVER=kgsl
+FD_FORCE_KGSL=1"
+  else
+    MESA_ENV="MESA_LOADER_DRIVER_OVERRIDE=kgsl
+TU_DEBUG=noconform"
+  fi
+  printf '%s\n' "$MESA_ENV" | sudo tee -a "$WORKDIR/rootfs/etc/environment" >/dev/null
+fi
+
 # ---------- Anland 配置 ----------
 if [ "$ANLAND" = "true" ]; then
   echo "==> 配置 Anland (Wayland 输出到 Android)"

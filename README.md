@@ -36,6 +36,7 @@
   - 从 Droidspaces-rootfs-KDE-builder 拉取 patched KWin/Xwayland 预编译包 (debian trixie / ubuntu 26.04) 并 `apt-mark hold` 锁定
   - 安装 `plasma-wayland.service` 自启动 (容器内 `startplasma-wayland` 可手动启动)
   - 宿主侧需准备 anland daemon (`virtual-drm-daemon` + app，见 [anland](https://github.com/superturtlee/anland))，并把 socket 绑定挂载到 `/run/display.sock`
+- **Mesa (Adreno) GPU 驱动** (arm64 + KDE 模式): 从 [mesa-for-android-container](https://github.com/lfdevs/mesa-for-android-container) 自动下载对应发行版的 KGSL 驱动包解压进 rootfs。Anland 模式写入 `MESA_LOADER_DRIVER_OVERRIDE=kgsl`、`GALLIUM_DRIVER=kgsl`、`FD_FORCE_KGSL=1`；X11 模式写入 `MESA_LOADER_DRIVER_OVERRIDE=kgsl`、`TU_DEBUG=noconform`。驱动资产缺失的发行版组合会跳过并告警，不影响构建
 
 定制产物命名带后缀: `debian-trixie-arm64-default-kde-anland-rootfs.tar.xz`。
 
