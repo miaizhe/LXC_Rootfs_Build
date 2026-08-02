@@ -25,7 +25,12 @@ if [ ! -f "$ROOTFS_TAR" ]; then
 fi
 
 WORKDIR=$(mktemp -d)
-trap 'sudo umount -R "$WORKDIR/rootfs" >/dev/null 2>&1 || true; sudo rm -rf "$WORKDIR"' EXIT
+cleanup() {
+  for m in proc dev sys; do sudo umount -R "$WORKDIR/rootfs/$m" >/dev/null 2>&1 || true; done
+  sudo umount -R "$WORKDIR/rootfs" >/dev/null 2>&1 || true
+  sudo rm -rf "$WORKDIR" 2>/dev/null || sudo rm -rf -- "$WORKDIR/rootfs/proc" "$WORKDIR/rootfs/dev" "$WORKDIR/rootfs/sys" "$WORKDIR/rootfs" "$WORKDIR"
+}
+trap cleanup EXIT
 mkdir -p "$WORKDIR/rootfs"
 
 echo "==> 解包 $ROOTFS_TAR"
@@ -38,6 +43,8 @@ CHROOT_SH() { sudo chroot "$WORKDIR/rootfs" /bin/sh -c "$1"; }
 sudo mount -t proc proc "$WORKDIR/rootfs/proc"
 sudo mount --bind /dev "$WORKDIR/rootfs/dev"
 sudo mount --bind /sys "$WORKDIR/rootfs/sys"
+# distrobuilder 构建的 rootfs 中 /etc/resolv.conf 是悬空符号链接, 需先删除再覆盖
+sudo rm -f "$WORKDIR/rootfs/etc/resolv.conf"
 sudo cp /etc/resolv.conf "$WORKDIR/rootfs/etc/resolv.conf"
 
 # ---------- 安装 KDE ----------
@@ -170,6 +177,7 @@ EOF
 fi
 
 # ---------- 清理并重新打包 ----------
+for m in proc dev sys; do sudo umount -R "$WORKDIR/rootfs/$m" >/dev/null 2>&1 || true; done
 sudo umount -R "$WORKDIR/rootfs" >/dev/null 2>&1 || true
 sudo rm -f "$WORKDIR/rootfs/etc/resolv.conf"
 
