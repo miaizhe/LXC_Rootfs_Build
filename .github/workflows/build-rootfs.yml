@@ -43,6 +43,22 @@ on:
           - zstd
           - bzip2
         default: xz
+      kde:
+        description: KDE 桌面 (none/min/conc, 仅 debian/ubuntu/archlinux)
+        type: choice
+        options:
+          - none
+          - min
+          - conc
+        default: none
+      anland:
+        description: Anland 支持 (Android Wayland 输出, 仅 debian/ubuntu arm64)
+        type: boolean
+        default: false
+      username:
+        description: KDE 模式创建的普通用户 (密码 1234)
+        type: string
+        default: user
   schedule:
     - cron: '0 2 * * 0'
 
@@ -64,6 +80,9 @@ jobs:
           GEN_ARCHITECTURE: ${{ inputs.architecture }}
           GEN_VARIANT: ${{ inputs.variant }}
           GEN_COMPRESSION: ${{ inputs.compression }}
+          GEN_KDE: ${{ inputs.kde }}
+          GEN_ANLAND: ${{ inputs.anland }}
+          GEN_USERNAME: ${{ inputs.username }}
         run: |
           python3 << 'EOF'
           import json, os
@@ -77,6 +96,9 @@ jobs:
           architecture = get('ARCHITECTURE', 'arm64')
           variant = get('VARIANT', 'default')
           compression = get('COMPRESSION', 'xz')
+          kde = get('KDE', 'none')
+          anland = get('ANLAND', 'false').lower() in ('true', '1', 'yes')
+          username = get('USERNAME', 'user')
 
           DEFAULT_RELEASE = {
               'debian': 'trixie',
@@ -95,16 +117,22 @@ jobs:
           ALL_DISTROS = list(DEFAULT_RELEASE)
           ARCHS = ['amd64', 'arm64'] if architecture == 'both' else [architecture]
           RUNNER = {'amd64': 'ubuntu-latest', 'arm64': 'ubuntu-24.04-arm'}
+          EXT = {'xz': 'tar.xz', 'gzip': 'tar.gz', 'zstd': 'tar.zst', 'bzip2': 'tar.bz2'}
 
           distros = ALL_DISTROS if distribution == 'all' else [distribution]
           rows = []
           for d in distros:
               rel = release or DEFAULT_RELEASE.get(d, '')
               rel = CODENAME.get(d, {}).get(rel, rel)
+              # KDE/anland 适用范围限制
+              row_kde = kde if d in ('debian', 'ubuntu', 'archlinux') else 'none'
               for a in ARCHS:
+                  row_anland = anland and d in ('debian', 'ubuntu') and a == 'arm64'
                   rows.append({'distro': d, 'release': rel, 'arch': a,
                                'variant': variant, 'compression': compression,
-                               'runner': RUNNER[a]})
+                               'runner': RUNNER[a], 'ext': EXT[compression],
+                               'kde': row_kde, 'anland': row_anland,
+                               'username': username})
 
           nixos = [r for r in rows if r['distro'] == 'nixos']
           distro = [r for r in rows if r['distro'] != 'nixos']
@@ -180,6 +208,18 @@ jobs:
             "${{ matrix.variant }}" \
             "${{ matrix.compression }}" \
             "$GITHUB_WORKSPACE/output"
+
+      - name: KDE / Anland 定制
+        if: matrix.kde != 'none' || matrix.anland == true
+        run: |
+          SUFFIX=""
+          [ "${{ matrix.kde }}" != "none" ] && SUFFIX="-kde"
+          [ "${{ matrix.anland }}" = "true" ] && SUFFIX="${SUFFIX}-anland"
+          IN="$GITHUB_WORKSPACE/output/${{ matrix.distro }}-${{ matrix.release }}-${{ matrix.arch }}-${{ matrix.variant }}-rootfs.${{ matrix.ext }}"
+          OUT="$GITHUB_WORKSPACE/output/${{ matrix.distro }}-${{ matrix.release }}-${{ matrix.arch }}-${{ matrix.variant }}${SUFFIX}-rootfs.${{ matrix.ext }}"
+          bash scripts/customize-rootfs.sh \
+            "$IN" "${{ matrix.distro }}" "${{ matrix.release }}" "${{ matrix.arch }}" \
+            "${{ matrix.kde }}" "${{ matrix.anland }}" "${{ matrix.username }}" "$OUT"
 
       - name: 上传产物
         uses: actions/upload-artifact@v4

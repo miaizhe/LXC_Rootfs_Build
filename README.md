@@ -17,9 +17,27 @@
 1. 把本目录推送到 GitHub 仓库
 2. 进入 **Actions → Build LXC Rootfs → Run workflow**
 3. 选择发行版 / 版本 / 架构 (`arm64` / `amd64` / `both`) / 变体 / 压缩算法
-4. 构建完成后在运行页面的 **Artifacts** 下载产物
+4. 可选开启 **KDE 桌面** (`none`/`min`/`conc`) 和 **Anland 支持**，指定用户名
+5. 构建完成后在运行页面的 **Artifacts** 下载产物
 
 仓库也配置了每周日 02:00 自动构建全部发行版 (arm64)。
+
+## KDE 桌面与 Anland
+
+构建完成后可对 rootfs 二次定制 (`scripts/customize-rootfs.sh`)，参考了 [Droidspaces-rootfs-KDE-builder](https://github.com/Goldzxcbug/Droidspaces-rootfs-KDE-builder) 的实现：
+
+- **KDE 安装** (仅 debian / ubuntu / archlinux):
+  - `min`: 最小 KDE 桌面 (`kde-plasma-desktop` 基础组件 + 中文字体 + konsole/dolphin/kate)
+  - `conc`: 精简完整版 (在 min 基础上加系统监控、文件管理、缩略图等)
+  - 自动创建普通用户 (默认 `user`，密码 `1234`，加入 `sudo`)
+  - 非 Anland 模式写入 `DISPLAY=:5` 并安装 `plasma-x11.service` 自启动
+- **Anland 支持** (仅 debian / ubuntu 的 arm64):
+  - 写入 Anland 环境变量 (`WAYLAND_DISPLAY=wayland-0`、`ANLAND=1`、`ANLAND_SOCKET=/run/display.sock` 等)
+  - 从 Droidspaces-rootfs-KDE-builder 拉取 patched KWin/Xwayland 预编译包 (debian trixie / ubuntu 26.04) 并 `apt-mark hold` 锁定
+  - 安装 `plasma-wayland.service` 自启动 (容器内 `startplasma-wayland` 可手动启动)
+  - 宿主侧需准备 anland daemon (`virtual-drm-daemon` + app，见 [anland](https://github.com/superturtlee/anland))，并把 socket 绑定挂载到 `/run/display.sock`
+
+定制产物命名带后缀: `debian-trixie-arm64-default-kde-anland-rootfs.tar.xz`。
 
 ## 产物
 
@@ -53,6 +71,12 @@ bash scripts/build-distro.sh images/debian.yaml trixie arm64 default xz ./output
 
 # 构建 NixOS arm64
 bash scripts/build-nixos.sh 26.05 arm64 ./output
+
+# 对已构建的 rootfs 安装 KDE + Anland
+bash scripts/customize-rootfs.sh \
+  ./output/debian-trixie-arm64-default-rootfs.tar.xz \
+  debian trixie arm64 min true user \
+  ./output/debian-trixie-arm64-default-kde-anland-rootfs.tar.xz
 ```
 
 ## 目录结构
@@ -66,7 +90,8 @@ bash scripts/build-nixos.sh 26.05 arm64 ./output
 │   └── kali.yaml
 └── scripts/
     ├── build-distro.sh                  # distrobuilder 构建脚本
-    └── build-nixos.sh                   # NixOS 构建脚本
+    ├── build-nixos.sh                   # NixOS 构建脚本
+    └── customize-rootfs.sh              # KDE / Anland 定制脚本
 ```
 
 ## 注意事项
@@ -74,4 +99,5 @@ bash scripts/build-nixos.sh 26.05 arm64 ./output
 - **arm64 构建**: 自动使用 GitHub 原生 arm64 托管 runner (`ubuntu-24.04-arm`)，无需 QEMU 模拟，速度与 amd64 相当；amd64 构建使用 `ubuntu-latest`。仅当两种架构混跑且需要交叉模拟时才会启用 binfmt
 - **distrobuilder 缓存**: 编译产物缓存在 Actions cache 中，首次构建后不再重复编译
 - **NixOS** 的特殊性: NixOS 无法用传统方式"组装" rootfs，官方容器镜像本身即由 Hydra CI 构建，因此本项目直接复用官方产物并重打包，保证与 images.linuxcontainers.org 一致
+- **KDE/Anland 限制**: KDE 仅支持 debian/ubuntu/archlinux；Anland 仅支持 debian/ubuntu 的 arm64。patched KWin 包仅覆盖 debian trixie / ubuntu 26.04，其他版本会跳过 patched 包仅写入环境配置
 - `images/*.yaml` 来自 [lxc/lxc-ci](https://github.com/lxc/lxc-ci/tree/main/images)，如需更新可直接覆盖后重新触发构建
