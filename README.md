@@ -42,7 +42,7 @@ lxc image import rootfs.tar.xz meta.tar.xz --alias debian-trixie
 
 ```bash
 # 安装依赖: debootstrap, qemu-user-static (构建 arm64 时), golang
-go install github.com/lxc/distrobuilder/cmd/distrobuilder@latest
+go install github.com/lxc/distrobuilder/v3/distrobuilder@latest
 
 # 构建 Debian arm64
 bash scripts/build-distro.sh images/debian.yaml trixie arm64 default xz ./output
