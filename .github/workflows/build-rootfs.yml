@@ -136,8 +136,13 @@ jobs:
         run: |
           command -v go >/dev/null || sudo apt-get install -y golang-go
           sudo apt-get install -y pkg-config libgpgme-dev libbtrfs-dev
-          go install github.com/lxc/distrobuilder/v3/distrobuilder@latest
-          sudo cp "$(go env GOPATH)/bin/distrobuilder" /usr/local/bin/
+          git clone --depth 1 --branch v3.3.1 https://github.com/lxc/distrobuilder /tmp/distrobuilder
+          cd /tmp/distrobuilder
+          # 上游 go.mod 将 filepath-securejoin 升到 v0.6.1, 与 go.podman.io/storage v1.62.0
+          # 要求的 v0.4.x API (OpenInRoot/Reopen) 不兼容, 用 replace 强制使用 v0.4.1
+          go mod edit -replace=github.com/cyphar/filepath-securejoin=github.com/cyphar/filepath-securejoin@v0.4.1
+          go build -mod=mod -o distrobuilder ./distrobuilder
+          sudo cp distrobuilder /usr/local/bin/
           distrobuilder version
 
       - name: 构建 rootfs
